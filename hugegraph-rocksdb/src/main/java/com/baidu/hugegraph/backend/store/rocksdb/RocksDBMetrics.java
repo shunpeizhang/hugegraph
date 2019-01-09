@@ -19,26 +19,27 @@
 
 package com.baidu.hugegraph.backend.store.rocksdb;
 
+import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.io.FileUtils;
 
 import com.baidu.hugegraph.backend.store.BackendMetrics;
-import com.baidu.hugegraph.backend.store.rocksdb.RocksDBSessions.Session;
 import com.baidu.hugegraph.util.Bytes;
 import com.baidu.hugegraph.util.InsertionOrderUtil;
 
 public class RocksDBMetrics implements BackendMetrics {
 
-    private static final String INDEX_FILTER =
-                                "rocksdb.estimate-table-readers-mem";
-    private static final String MEM_TABLE = "rocksdb.cur-size-all-mem-tables";
-    private static final String R_DATA_SIZE = "rocksdb.estimate-live-data-size";
+    public static final String INDEX_FILTER =
+                               "rocksdb.estimate-table-readers-mem";
+    public static final String MEM_TABLE = "rocksdb.cur-size-all-mem-tables";
 
-    private final Session session;
+    public static final String DISK_USAGE = "rocksdb.disk-usage";
 
-    public RocksDBMetrics(Session session) {
-        this.session = session;
+    private final List<RocksDBSessions> dbs;
+
+    public RocksDBMetrics(List<RocksDBSessions> dbs) {
+        this.dbs = dbs;
     }
 
     @Override
@@ -52,13 +53,21 @@ public class RocksDBMetrics implements BackendMetrics {
         return metrics;
     }
 
-    private long getMemUsed() {
-        long indexFilter = Long.parseLong(this.session.property(INDEX_FILTER));
-        long memtable = Long.parseLong(this.session.property(MEM_TABLE));
+    private double getMemUsed() {
+        double indexFilter = this.sum(INDEX_FILTER);
+        double memtable = this.sum(MEM_TABLE);
         return indexFilter + memtable;
     }
 
     private long getDataSize() {
-        return Long.parseLong(this.session.property(R_DATA_SIZE));
+        return (long) this.sum(DISK_USAGE);
+    }
+
+    private double sum(String property) {
+        double total = 0;
+        for (RocksDBSessions db : this.dbs) {
+            total += Double.parseDouble(db.property(property));
+        }
+        return total;
     }
 }
