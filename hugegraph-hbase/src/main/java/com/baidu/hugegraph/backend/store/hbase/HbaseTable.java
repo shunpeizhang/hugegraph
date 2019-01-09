@@ -40,7 +40,7 @@ import com.baidu.hugegraph.backend.query.IdRangeQuery;
 import com.baidu.hugegraph.backend.query.Query;
 import com.baidu.hugegraph.backend.serializer.BinaryBackendEntry;
 import com.baidu.hugegraph.backend.serializer.BinaryEntryIterator;
-import com.baidu.hugegraph.backend.serializer.BinaryEntryIterator.PageState;
+import com.baidu.hugegraph.backend.serializer.PageState;
 import com.baidu.hugegraph.backend.store.BackendEntry;
 import com.baidu.hugegraph.backend.store.BackendEntry.BackendColumn;
 import com.baidu.hugegraph.backend.store.BackendEntryIterator;

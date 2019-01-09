@@ -2896,7 +2896,7 @@ public class VertexCoreTest extends BaseCoreTest {
 
         long splitSize = 1 * 1024 * 1024;
         Object splits = graph.graphTransaction()
-                        .metadata(HugeType.VERTEX, "splits", splitSize);
+                             .metadata(HugeType.VERTEX, "splits", splitSize);
         for (Shard split : (List<Shard>) splits) {
             ConditionQuery q = new ConditionQuery(HugeType.VERTEX);
             q.scan(split.start(), split.end());

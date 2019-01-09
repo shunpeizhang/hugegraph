@@ -34,7 +34,6 @@ import com.baidu.hugegraph.backend.query.Condition;
 import com.baidu.hugegraph.backend.query.Condition.Relation;
 import com.baidu.hugegraph.backend.query.ConditionQuery;
 import com.baidu.hugegraph.backend.query.IdPrefixQuery;
-import com.baidu.hugegraph.backend.query.IdQuery;
 import com.baidu.hugegraph.backend.query.IdRangeQuery;
 import com.baidu.hugegraph.backend.query.Query;
 import com.baidu.hugegraph.backend.serializer.BinaryBackendEntry.BinaryId;
@@ -104,7 +103,6 @@ public class BinarySerializer extends AbstractSerializer {
         return new BinaryBackendEntry(edge.type(), id);
     }
 
-    @SuppressWarnings("unused")
     private BinaryBackendEntry newBackendEntry(SchemaElement elem) {
         return newBackendEntry(elem.type(), elem.id());
     }
@@ -633,11 +631,20 @@ public class BinarySerializer extends AbstractSerializer {
         E.checkArgument(index != null, "Please specify the index label");
         E.checkArgument(key != null, "Please specify the index key");
 
-        Id id = formatIndexId(query.resultType(), index, key);
-        IdQuery idQuery = new IdQuery(query, id);
-        idQuery.limit(query.limit());
-        idQuery.offset(query.offset());
-        return idQuery;
+        Id prefix = formatIndexId(query.resultType(), index, key);
+
+        Query newQuery;
+        if (query.paging() && !query.page().isEmpty()) {
+            byte[] position = PageState.fromString(query.page()).position();
+            BinaryId start = new BinaryId(position, null);
+            newQuery = new IdPrefixQuery(query, start, prefix);
+        } else {
+            newQuery = new IdPrefixQuery(query, prefix);
+            newQuery.page(query.page());
+        }
+        newQuery.limit(query.limit());
+        newQuery.offset(query.offset());
+        return newQuery;
     }
 
     private Query writeRangeIndexQuery(ConditionQuery query) {
@@ -680,10 +687,11 @@ public class BinarySerializer extends AbstractSerializer {
         HugeType type = query.resultType();
         if (keyEq != null) {
             Id id = formatIndexId(type, index, keyEq);
-            IdQuery idQuery = new IdQuery(query, id);
-            idQuery.limit(query.limit());
-            idQuery.offset(query.offset());
-            return idQuery;
+            Query newQuery = new IdPrefixQuery(query, id);
+            newQuery.page(query.page());
+            newQuery.limit(query.limit());
+            newQuery.offset(query.offset());
+            return newQuery;
         }
 
         if (keyMin == null) {
@@ -711,6 +719,7 @@ public class BinarySerializer extends AbstractSerializer {
             return new IdPrefixQuery(query, min, keyMinEq, prefix);
         } else {
             Id max = formatIndexId(type, index, keyMax);
+            // TODO: 可能也需要加limit、offset的设置
             return new IdRangeQuery(query, min, keyMinEq, max, keyMaxEq);
         }
     }

@@ -39,7 +39,8 @@ public class Query implements Cloneable {
     public static final long NO_LIMIT = Long.MAX_VALUE;
 
     public static final long NO_CAPACITY = -1L;
-    public static final long DEFAULT_CAPACITY = 800000L; // HugeGraph-777
+    // TODO: 可以放到个几百或上千，不必到80w那么多，其实可以跟tx的容量一样大
+    public static final long DEFAULT_CAPACITY = 500L; // HugeGraph-777
 
     private HugeType resultType;
     private Map<HugeKeys, Order> orders;
@@ -265,8 +266,9 @@ public class Query implements Cloneable {
 
     @Override
     public String toString() {
-        return String.format("Query for %s offset=%d, limit=%d, order by %s",
+        return String.format("Query for %s page=%s, offset=%d, limit=%d, order by %s",
                              this.resultType,
+                             this.page,
                              this.offset,
                              this.limit,
                              this.orders.toString());

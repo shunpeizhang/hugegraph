@@ -310,12 +310,27 @@ public class GraphTransaction extends IndexableTransaction {
         if (!(query instanceof ConditionQuery)) {
             return super.query(query);
         }
-
+        boolean paging = query.paging();
+        List<ConditionQuery> flattenQueries = ConditionQueryFlatten.flatten((ConditionQuery) query);
+        // TODO：似乎这个queryies应该是一个迭代器，而不是一个List
         List<Query> queries = new ArrayList<>();
         IdQuery ids = new IdQuery(query.resultType(), query);
-        for (ConditionQuery cq: ConditionQueryFlatten.flatten(
-                                (ConditionQuery) query)) {
+        List<IndexIdIterator> indexIdIterators = new ArrayList<>();
+        for (ConditionQuery cq: flattenQueries) {
+            // TODO：这个从cq到q的过程就是索引查询的过程，现在是直接把索引的所有Id都拿出来了
+            // 其实应该是分页获取的，比如总共有1亿个Id，但一次只拿出80w个，然后拿着这80w去
+            // 后端获取（迭代器），下一次再拿出80w个，再去后端获取一次
             Query q = this.optimizeQuery(cq);
+            if (q == null) {
+                if (paging) {
+                    // TODO: 在这个地方看来，IdIterator是一个一个往外拿的，但其实内部是一批一批的取的
+                    IndexIdIterator indexIdIterator = this.indexQueryInPage(cq);
+                    indexIdIterators.add(indexIdIterator);
+                    continue;
+                } else {
+                    q = this.indexQueryNoPage(cq);
+                }
+            }
             /*
              * NOTE: There are two possibilities for this query:
              * 1.sysprop-query, which would not be empty.
@@ -332,6 +347,24 @@ public class GraphTransaction extends IndexableTransaction {
         ExtendableIterator<BackendEntry> rs = new ExtendableIterator<>();
         if (!ids.empty()) {
             queries.add(ids);
+        }
+        if (paging) {
+            for (IndexIdIterator indexIdIterator : indexIdIterators) {
+                // TODO: 对于每一个IdIterator，都应该构造一个mapper，而且这里可以直接将这一批全部发下去
+                rs.extend(new MapperIterator<>(indexIdIterator, (id) -> {
+                    IdQuery idQuery = new IdQuery(query.resultType(), id);
+                    Iterator<BackendEntry> results = super.query(idQuery);
+                    if (results.hasNext()) {
+                        BackendEntry entry = results.next();
+                        if (results.hasNext()) {
+                            throw new HugeException("不应该还有下一个");
+                        }
+                        return entry;
+                    } else {
+                        return null;
+                    }
+                }));
+            }
         }
         for (Query q : queries) {
             rs.extend(super.query(q));
@@ -934,7 +967,7 @@ public class GraphTransaction extends IndexableTransaction {
         }
     }
 
-    protected Query optimizeQuery(ConditionQuery query) {
+    private Query optimizeQuery(ConditionQuery query) {
         Id label = (Id) query.condition(HugeKeys.LABEL);
 
         // Optimize vertex query
@@ -1018,7 +1051,11 @@ public class GraphTransaction extends IndexableTransaction {
                 return query;
             }
         }
+        // TODO: any better value?
+        return null;
+    }
 
+    private Query indexQueryNoPage(ConditionQuery query) {
         /*
          * Optimize by index-query
          * It will return a list of id (maybe empty) if success,
@@ -1026,7 +1063,19 @@ public class GraphTransaction extends IndexableTransaction {
          */
         this.beforeRead();
         try {
-            return this.indexTx.query(query);
+            return this.indexTx.queryToIds(query);
+        } finally {
+            this.afterRead();
+        }
+    }
+
+    private IndexIdIterator indexQueryInPage(ConditionQuery query) {
+        long pageSize = this.graph().configuration().get(CoreOptions.PAGE_SIZE);
+        this.beforeRead();
+        try {
+            return new IndexIdIterator(query, pageSize, () -> {
+                return this.indexTx.query(query);
+            });
         } finally {
             this.afterRead();
         }
