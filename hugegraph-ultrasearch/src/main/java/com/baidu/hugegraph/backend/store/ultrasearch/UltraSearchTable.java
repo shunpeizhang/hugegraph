@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import net.sf.json.JSONObject;
 import org.slf4j.Logger;
 
 import com.baidu.hugegraph.backend.BackendException;
@@ -58,58 +59,16 @@ public abstract class UltraSearchTable
     }
 
     protected void createTable(Session session, TableDefine tableDefine) {
-        StringBuilder sql = new StringBuilder();
-        sql.append("CREATE TABLE IF NOT EXISTS ");
-        sql.append(this.table()).append(" (");
-        // Add columns
-        for (Map.Entry<HugeKeys, String> entry :
-                tableDefine.columns().entrySet()) {
-            sql.append(formatKey(entry.getKey()));
-            sql.append(" ");
-            sql.append(entry.getValue());
-            sql.append(", ");
-        }
-        // Specified primary keys
-        sql.append(" PRIMARY KEY (");
-        int i = 0;
-        for (HugeKeys key : tableDefine.keys()) {
-            sql.append(key);
-            if (++i != tableDefine.keys().size()) {
-                sql.append(", ");
-            }
-        }
-
-        sql.append(")) ENGINE=InnoDB;");
-
-        LOG.debug("Create table: {}", sql);
-        try {
-            session.execute(sql.toString());
-        } catch (SQLException e) {
-            throw new BackendException("Failed to create table with '%s'",
-                    e, sql);
-        }
+        LOG.debug("createTable table: {}", this.table());
     }
 
     protected void dropTable(Session session) {
         LOG.debug("Drop table: {}", this.table());
-        String sql = String.format("DROP TABLE IF EXISTS %s;", this.table());
-        try {
-            session.execute(sql);
-        } catch (SQLException e) {
-            throw new BackendException("Failed to drop table with '%s'",
-                    e, sql);
-        }
+
     }
 
     protected void truncateTable(Session session) {
         LOG.debug("Truncate table: {}", this.table());
-        String sql = String.format("TRUNCATE TABLE %s;", this.table());
-        try {
-            session.execute(sql);
-        } catch (SQLException e) {
-            throw new BackendException("Failed to truncate table with '%s'",
-                    e, sql);
-        }
     }
 
     protected List<HugeKeys> idColumnName() {
@@ -176,6 +135,20 @@ public abstract class UltraSearchTable
      */
     @Override
     public void insert(Session session, UltraSearchBackendEntry.Row entry) {
+        String docID = new String("id:" + session.database() + ":" + TABLE + "::" + type.name());
+        JSONObject obj = new JSONObject();
+        obj.put("update", docID);
+
+        JSONObject fields = new JSONObject();
+        JSONObject id = new JSONObject();
+        id.put("increment", increment);
+        fields.put("id", id);
+
+        obj.put("fields", fields);
+        session.add(docID, obj.toString());
+
+
+
         String template = this.buildInsertTemplate(entry);
 
         PreparedStatement insertStmt;
@@ -195,35 +168,13 @@ public abstract class UltraSearchTable
 
     @Override
     public void delete(Session session, UltraSearchBackendEntry.Row entry) {
-        List<HugeKeys> idNames = this.idColumnName();
-        String template = this.buildDeleteTemplate(idNames);
-
-        PreparedStatement deleteStmt;
-        try {
-            deleteStmt = session.prepareStatement(template);
-            if (entry.columns().isEmpty()) {
-                // Delete just by id
-                List<Long> idValues = this.idColumnValue(entry);
-                assert idNames.size() == idValues.size();
-
-                for (int i = 0, n = idNames.size(); i < n; i++) {
-                    deleteStmt.setObject(i + 1, idValues.get(i));
-                }
-            } else {
-                // Delete just by column keys(must be id columns)
-                for (int i = 0, n = idNames.size(); i < n; i++) {
-                    HugeKeys key = idNames.get(i);
-                    Object value = entry.column(key);
-
-                    deleteStmt.setObject(i + 1, value);
-                }
+        if (entry.columns().isEmpty()) {
+            session.delete(this.table(), entry.id());
+        } else {
+            for (BackendColumn col : entry.columns()) {
+                session.remove(table(), CF, entry.id().asBytes(), col.name);
             }
-        } catch (SQLException e) {
-            throw new BackendException("Failed to prepare statement '%s'" +
-                    "with entry columns %s",
-                    template, entry.columns().values());
         }
-        session.add(deleteStmt);
     }
 
     @Override

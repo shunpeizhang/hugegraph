@@ -1,6 +1,9 @@
 package com.baidu.hugegraph.backend.store.ultrasearch;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.SocketTimeoutException;
+import java.nio.charset.Charset;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -10,9 +13,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.URIBuilder;
 import org.slf4j.Logger;
 
@@ -32,11 +38,20 @@ import com.ultracloud.ultrasearch.http.client.config.Endpoint;
 import com.ultracloud.ultrasearch.http.client.config.FeedParams;
 import com.ultracloud.ultrasearch.http.client.config.SessionParams;
 
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+import org.apache.http.Header;
+import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.params.CoreConnectionPNames;
+
 public class UltraSearchSessions extends BackendSessionPool {
 
     private static final Logger LOG = Log.logger(UltraSearchSessions.class);
-
-    private static final int DROP_DB_TIMEOUT = 10000;
 
     private HugeConfig config;
     private String database;
@@ -64,9 +79,8 @@ public class UltraSearchSessions extends BackendSessionPool {
      */
     @Override
     public void open(HugeConfig config) throws Exception {
-        try (Connection conn = this.open(false)) {
-            this.opened = true;
-        }
+        super.getOrNewSession();
+        this.opened = true;
     }
 
     @Override
@@ -74,47 +88,11 @@ public class UltraSearchSessions extends BackendSessionPool {
         return this.opened;
     }
 
-    /**
-     * Connect DB with specified database
-     */
-    private Connection open(boolean autoReconnect) throws SQLException {
-        String url = this.config.get(UltraSearchOptions.JDBC_URL);
-        if (url.endsWith("/")) {
-            url = String.format("%s%s", url, this.database);
-        } else {
-            url = String.format("%s/%s", url, this.database);
-        }
 
-        int maxTimes = this.config.get(UltraSearchOptions.JDBC_RECONNECT_MAX_TIMES);
-        int interval = this.config.get(UltraSearchOptions.JDBC_RECONNECT_INTERVAL);
-
-        URIBuilder uriBuilder = new URIBuilder();
-        uriBuilder.setPath(url)
-                .setParameter("rewriteBatchedStatements", "true")
-                .setParameter("useServerPrepStmts", "false")
-                .setParameter("autoReconnect", String.valueOf(autoReconnect))
-                .setParameter("maxReconnects", String.valueOf(maxTimes))
-                .setParameter("initialTimeout", String.valueOf(interval));
-        return this.connect(uriBuilder.toString());
-    }
-
-    private Connection connect(String url) throws SQLException {
-        String driverName = this.config.get(UltraSearchOptions.JDBC_DRIVER);
-        String username = this.config.get(UltraSearchOptions.JDBC_USERNAME);
-        String password = this.config.get(UltraSearchOptions.JDBC_PASSWORD);
-        try {
-            // Register JDBC driver
-            Class.forName(driverName);
-        } catch (ClassNotFoundException e) {
-            throw new BackendException("Invalid driver class '%s'",
-                    driverName);
-        }
-        return DriverManager.getConnection(url, username, password);
-    }
 
     @Override
     protected synchronized Session newSession() {
-        return new Session();
+        return new Session(config, database);
     }
 
     @Override
@@ -133,75 +111,6 @@ public class UltraSearchSessions extends BackendSessionPool {
         E.checkState(!session.closed(), "MySQL session has been closed");
     }
 
-    public void createDatabase() {
-        // Create database with non-database-session
-        LOG.debug("Create database: {}", this.database);
-
-        String sql = this.buildCreateDatabase(this.database);
-        try (Connection conn = this.openWithoutDB(0)) {
-            conn.createStatement().execute(sql);
-        } catch (SQLException e) {
-            throw new BackendException("Failed to create database '%s'",
-                    this.database);
-        }
-    }
-
-    protected String buildCreateDatabase(String database) {
-        return String.format("CREATE DATABASE IF NOT EXISTS %s " +
-                        "DEFAULT CHARSET utf8 COLLATE utf8_bin;",
-                database);
-    }
-
-    public void dropDatabase() {
-        LOG.debug("Drop database: {}", this.database);
-
-        String sql = String.format("DROP DATABASE IF EXISTS %s;",
-                this.database);
-        try (Connection conn = this.openWithoutDB(DROP_DB_TIMEOUT)) {
-            conn.createStatement().execute(sql);
-        } catch (SQLException e) {
-            if (e.getCause() instanceof SocketTimeoutException) {
-                LOG.warn("Drop database '{}' timeout", this.database);
-            } else {
-                throw new BackendException("Failed to drop database '%s'",
-                        this.database);
-            }
-        }
-    }
-
-    public boolean existsDatabase() {
-        try (Connection conn = this.openWithoutDB(0);
-             ResultSet result = conn.getMetaData().getCatalogs()) {
-            while (result.next()) {
-                String dbName = result.getString(1);
-                if (dbName.equals(this.database)) {
-                    return true;
-                }
-            }
-        } catch (Exception e) {
-            throw new BackendException("Failed to obtain MySQL metadata, " +
-                    "please ensure it is ok", e);
-        }
-        return false;
-    }
-
-    /**
-     * Connect DB without specified database
-     */
-    private Connection openWithoutDB(int timeout) {
-        String jdbcUrl = this.config.get(UltraSearchOptions.JDBC_URL);
-        String url = new URIBuilder().setPath(jdbcUrl)
-                .setParameter("socketTimeout",
-                        String.valueOf(timeout))
-                .toString();
-        try {
-            return connect(url);
-        } catch (SQLException e) {
-            throw new BackendException("Failed to access %s, " +
-                    "please ensure it is ok", jdbcUrl);
-        }
-    }
-
     public static class Operation {
         final public String documentId;
         final public CharSequence data;
@@ -214,28 +123,29 @@ public class UltraSearchSessions extends BackendSessionPool {
 
     public class Session extends BackendSession {
 
-        //private Connection conn;
-        //private Map<String, PreparedStatement> statements;
         private BlockingQueue<Operation> operations = new ArrayBlockingQueue<Operation>(100);
         private FeedClient feedClient;
         private AtomicInteger pending = new AtomicInteger(0);
+        private AtomicBoolean drain = new AtomicBoolean(false);
+        private final CountDownLatch finishedDraining = new CountDownLatch(1);
         private boolean opened;
-        private int count;
+        private HugeConfig config;
+        private String database;
 
-        public Session() {
-            this.conn = null;
-            this.statements = new HashMap<>();
+        public Session(HugeConfig config, String database) {
             this.opened = false;
-            this.count = 0;
-            try {
-                this.open();
-            } catch (SQLException ignored) {
-                // Ignore
-            }
+            this.config = config;
+            this.database = database;
+
+            this.open();
+        }
+
+        public String database() {
+            return this.database;
         }
 
         public void open(){
-            Endpoint endPoint = Endpoint.create(config.get(UltraSearchOptions.JDBC_PASSWORD), 6808, false);
+            Endpoint endPoint = Endpoint.create(config.get(UltraSearchOptions.ULTRASEARCH_IP), config.get(UltraSearchOptions.ULTRASEARCH_PORT), false);
             SessionParams sessionParams = new SessionParams.Builder()
                     .addCluster(new Cluster.Builder().addEndpoint(endPoint).build())
                     .setConnectionParams(new ConnectionParams.Builder().setDryRun(false).build())
@@ -250,30 +160,14 @@ public class UltraSearchSessions extends BackendSessionPool {
         @Override
         public void close() {
             assert this.closeable();
-            if (this.conn == null) {
-                return;
-            }
-
-            SQLException exception = null;
-            for (PreparedStatement statement : this.statements.values()) {
-                try {
-                    statement.close();
-                } catch (SQLException e) {
-                    exception = e;
-                }
-            }
-
+            drain.set(true);
             try {
-                this.conn.close();
-            } catch (SQLException e) {
-                exception = e;
+                finishedDraining.await();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
 
             this.opened = false;
-            if (exception != null) {
-                throw new BackendException("Failed to close connection",
-                        exception);
-            }
         }
 
         @Override
@@ -283,21 +177,8 @@ public class UltraSearchSessions extends BackendSessionPool {
 
         @Override
         public void clear() {
-            this.count = 0;
-            SQLException exception = null;
-            for (PreparedStatement statement : this.statements.values()) {
-                try {
-                    statement.clearBatch();
-                } catch (SQLException e) {
-                    exception = e;
-                }
-            }
-            if (exception != null) {
-                /*
-                 * Will throw exception when the database connection error,
-                 * we clear statements because clearBatch() failed
-                 */
-                this.statements = new HashMap<>();
+            synchronized (this){
+                operations.clear();
             }
         }
 
@@ -308,33 +189,178 @@ public class UltraSearchSessions extends BackendSessionPool {
 
         @Override
         public boolean hasChanges() {
-            return this.count > 0;
+            return this.operations.size() > 0;
         }
 
-        public ResultSet select(String sql) throws SQLException {
-            assert this.conn.getAutoCommit();
-            return this.conn.createStatement().executeQuery(sql);
+        public JSONArray select(String sql){
+            String url = new String("http://" +
+                    config.get(UltraSearchOptions.ULTRASEARCH_IP) + ":" +
+                    config.get(UltraSearchOptions.ULTRASEARCH_PORT) + "/search/");
+
+            StringBuilder resultJson = new StringBuilder();
+            boolean ret = httpPostWithJson(sql, url, resultJson);
+            if(!ret){
+                LOG.error("select failed!");
+                return null;
+            }
+
+            //解析出children
+            JSONArray children = null;
+            {
+                JSONObject obj = JSONObject.fromObject(resultJson.toString());
+                JSONObject root = obj.getJSONObject("root");
+                if(null == root){
+                    LOG.error("json error!");
+                    return null;
+                }
+
+                //检测是否sql有错误
+                JSONObject errors = root.getJSONObject("errors");
+                if(!errors.isEmpty()){
+                    LOG.error("execute failed!");
+                    return null;
+                }
+
+                //得到结果
+                children = root.getJSONArray("children");
+            }
+
+            return children;
         }
 
-        public void add(PreparedStatement statement) {
+        public JSONObject get(String tableName, String docID){
+            String url = new String("http://" +
+                    config.get(UltraSearchOptions.ULTRASEARCH_IP) + ":" +
+                    config.get(UltraSearchOptions.ULTRASEARCH_PORT) + "/document/v1/" +
+                    database + "/" + tableName + "/docid/" + docID);
+
+            HttpClient httpClient = new DefaultHttpClient();
+
+            // 设置超时时间
+            httpClient.getParams().setParameter(CoreConnectionPNames.CONNECTION_TIMEOUT, 2000);
+            httpClient.getParams().setParameter(CoreConnectionPNames.SO_TIMEOUT, 2000);
+
+            JSONObject fields = null;
+            HttpGet get = new HttpGet(url);
+            get.setHeader("Content-type", "application/json");
             try {
-                // Add a row to statement
-                statement.addBatch();
-                this.count++;
-            } catch (SQLException e) {
-                throw new BackendException("Failed to add statement '%s' " +
-                        "to batch", e, statement);
+                HttpResponse response = httpClient.execute(get);
+                int statusCode = response.getStatusLine().getStatusCode();
+                if(statusCode != HttpStatus.SC_OK){
+                    LOG.error("请求出错: "+statusCode);
+                    return null;
+                }
+
+                StringBuilder resultJson = new StringBuilder();
+                InputStream in = response.getEntity().getContent();
+                while(0 < in.available()){
+                    byte[] buf = new byte[1024];
+                    in.read(buf);
+
+                    resultJson.append(new String(buf));
+                }
+
+                JSONObject obj = JSONObject.fromObject(resultJson.toString());
+                fields = obj.getJSONObject("fields");
+                if(null == fields){
+                    LOG.error("json error!");
+                    return null;
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+                return null;
+            }
+
+            return fields;
+        }
+
+        public void add(Operation op) {
+            synchronized (this){
+                operations.add(op);
             }
         }
 
-        public PreparedStatement prepareStatement(String sqlTemplate)
-                throws SQLException {
-            PreparedStatement statement = this.statements.get(sqlTemplate);
-            if (statement == null) {
-                statement = this.conn.prepareStatement(sqlTemplate);
-                this.statements.putIfAbsent(sqlTemplate, statement);
+        public void add(String docID, String opJson) {
+            Operation op = new Operation(docID, opJson);
+            synchronized (this){
+                operations.add(op);
             }
-            return statement;
+        }
+
+        public void delete(String docID) {
+            JSONObject obj = new JSONObject();
+            obj.put("remove", docID);
+
+            Operation op = new Operation(docID, obj.toString());
+            synchronized (this){
+                operations.add(op);
+            }
+        }
+
+        public void deleteWhere(String sql){
+            JSONArray result = select(sql);
+            if(null == result) return;
+
+            for (int i = 0; i < result.size(); i++) {
+                JSONObject item = result.getJSONObject(i);
+
+                String docID = item.getString("id");
+                delete(docID);
+            }
+        }
+
+        public boolean httpPostWithJson(String body, String url, StringBuilder resultJson){
+            boolean isSuccess = false;
+
+            HttpPost post = null;
+            try {
+                HttpClient httpClient = new DefaultHttpClient();
+
+                // 设置超时时间
+                httpClient.getParams().setParameter(CoreConnectionPNames.CONNECTION_TIMEOUT, 2000);
+                httpClient.getParams().setParameter(CoreConnectionPNames.SO_TIMEOUT, 2000);
+
+                post = new HttpPost(url);
+                post.setHeader("Content-type", "application/json");
+
+                StringEntity entity = new StringEntity(body, Charset.forName("UTF-8"));
+                post.setEntity(entity);
+
+                HttpResponse response = httpClient.execute(post);
+
+                // 检验返回码
+                int statusCode = response.getStatusLine().getStatusCode();
+                if(statusCode != HttpStatus.SC_OK){
+                    System.out.println("请求出错: "+statusCode);
+                    isSuccess = false;
+
+                    System.out.println(response.getStatusLine().getReasonPhrase());
+                }else{
+                    isSuccess = true;
+
+                    InputStream in = response.getEntity().getContent();
+
+                    while(0 < in.available()){
+                        byte[] buf = new byte[1024];
+                        in.read(buf);
+
+                        resultJson.append(new String(buf));
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                isSuccess = false;
+            }finally{
+                if(post != null){
+                    try {
+                        post.releaseConnection();
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+            return isSuccess;
         }
     }
 }

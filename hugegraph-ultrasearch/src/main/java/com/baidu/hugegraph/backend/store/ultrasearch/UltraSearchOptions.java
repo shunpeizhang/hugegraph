@@ -1,6 +1,7 @@
 package com.baidu.hugegraph.backend.store.ultrasearch;
 
 import static com.baidu.hugegraph.config.OptionChecker.disallowEmpty;
+import static com.baidu.hugegraph.config.OptionChecker.rangeInt;
 
 import com.baidu.hugegraph.config.ConfigOption;
 import com.baidu.hugegraph.config.OptionHolder;
@@ -29,5 +30,11 @@ public class UltraSearchOptions extends OptionHolder {
                     "172.16.11.17"
             );
 
-
+    public static final ConfigOption<Integer> ULTRASEARCH_PORT =
+            new ConfigOption<>(
+                    "ultrasearch.port",
+                    "port",
+                    rangeInt(8000, 10000),
+                    8080
+            );
 }

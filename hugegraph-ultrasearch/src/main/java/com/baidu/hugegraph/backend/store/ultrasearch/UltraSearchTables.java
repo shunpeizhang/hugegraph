@@ -20,6 +20,7 @@ import com.baidu.hugegraph.util.E;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import net.sf.json.JSONObject;
 
 public class UltraSearchTables {
 
@@ -67,34 +68,28 @@ public class UltraSearchTables {
             String schemaCol = formatKey(HugeKeys.SCHEMA_TYPE);
             String idCol = formatKey(HugeKeys.ID);
 
-            String select = String.format("SELECT ID FROM %s WHERE %s = '%s';",
-                    TABLE, schemaCol, type.name());
-            try {
-                ResultSet resultSet = session.select(select);
-                if (resultSet.next()) {
-                    return resultSet.getLong(idCol);
-                } else {
-                    return 0L;
-                }
-            } catch (SQLException e) {
-                throw new BackendException(
-                        "Failed to get id from counters with type '%s'",
-                        e, type);
+            JSONObject result = session.get(TABLE, type.name());
+            if(null == result)
+            {
+                throw new BackendException("Failed to get id from counters with type " + TABLE);
             }
+            return result.getInt("id");
         }
 
         public void increaseCounter(UltraSearchSessions.Session session,
                                     HugeType type, long increment) {
-            String update = String.format(
-                    "INSERT INTO %s VALUES ('%s', %s) " +
-                            "ON DUPLICATE KEY UPDATE " +
-                            "ID = ID + 1;", TABLE, type.name(), increment);
-            try {
-                session.execute(update);
-            } catch (SQLException e) {
-                throw new BackendException("Failed to update counters " +
-                        "with '%s'", e, update);
-            }
+
+            String docID = new String("id:" + session.database() + ":" + TABLE + "::" + type.name());
+            JSONObject obj = new JSONObject();
+            obj.put("update", docID);
+
+            JSONObject fields = new JSONObject();
+            JSONObject id = new JSONObject();
+            id.put("increment", increment);
+            fields.put("id", id);
+
+            obj.put("fields", fields);
+            session.add(docID, obj.toString());
         }
     }
 
@@ -209,7 +204,7 @@ public class UltraSearchTables {
 
             this.direction = direction;
             this.delByLabelTemplate = String.format(
-                    "DELETE FROM %s WHERE %s = ?;",
+                    "{\"sql\" : \"select * from %s where %s = SSS;\"}",
                     this.table(), formatKey(HugeKeys.LABEL));
 
             this.define = new TableDefine();
@@ -266,17 +261,8 @@ public class UltraSearchTables {
         }
 
         private void deleteEdgesByLabel(UltraSearchSessions.Session session, Id label) {
-            PreparedStatement deleteStmt;
-            try {
-                // Create or get delete prepare statement
-                deleteStmt = session.prepareStatement(this.delByLabelTemplate);
-                // Delete edges
-                deleteStmt.setObject(1, label.asLong());
-            } catch (SQLException e) {
-                throw new BackendException("Failed to prepare statement '%s'",
-                        this.delByLabelTemplate);
-            }
-            session.add(deleteStmt);
+            String sql = this.delByLabelTemplate.replace("SSS", label.asString());
+            session.deleteWhere(sql);
         }
 
         @Override

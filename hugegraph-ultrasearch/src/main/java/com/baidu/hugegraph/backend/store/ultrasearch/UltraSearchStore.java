@@ -127,14 +127,9 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
     @Override
     public void init() {
         this.checkClusterConnected();
-        this.sessions.createDatabase();
-        try {
-            // Open a new session connected with specified database
-            this.sessions.session().open();
-        } catch (SQLException e) {
-            throw new BackendException("Failed to connect database '%s'",
-                    this.database);
-        }
+
+        this.sessions.session().open();
+
         this.checkSessionConnected();
         this.initTables();
 
