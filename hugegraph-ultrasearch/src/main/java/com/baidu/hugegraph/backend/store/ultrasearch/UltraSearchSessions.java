@@ -309,6 +309,10 @@ public class UltraSearchSessions extends BackendSessionPool {
             }
         }
 
+        public String getDocID(String table, String id){
+            return "id:" + database + ":" + table + "::" + id;
+        }
+
         public boolean httpPostWithJson(String body, String url, StringBuilder resultJson){
             boolean isSuccess = false;
 

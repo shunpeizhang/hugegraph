@@ -140,13 +140,6 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
     public void clear() {
         // Check connected
         this.checkClusterConnected();
-
-        if (this.sessions.existsDatabase()) {
-            this.checkSessionConnected();
-            this.clearTables();
-            this.sessions.dropDatabase();
-        }
-
         LOG.debug("Store cleared: {}", this.store);
     }
 
@@ -205,32 +198,17 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
 
     @Override
     public void beginTx() {
-        this.checkSessionConnected();
-
-        Session session = this.sessions.session();
-        try {
-            session.begin();
-        } catch (SQLException e) {
-            throw new BackendException("Failed to open transaction", e);
-        }
+        throw new BackendException("beginTx not suport");
     }
 
     @Override
     public void commitTx() {
-        this.checkSessionConnected();
-
-        Session session = this.sessions.session();
-        int count = session.commit();
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Store {} committed {} items", this.store, count);
-        }
+        throw new BackendException("beginTx not Unsupported");
     }
 
     @Override
     public void rollbackTx() {
-        this.checkSessionConnected();
-        Session session = this.sessions.session();
-        session.rollback();
+        throw new BackendException("beginTx not Unsupported");
     }
 
     @Override

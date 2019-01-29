@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 import org.slf4j.Logger;
 
@@ -83,97 +84,31 @@ public abstract class UltraSearchTable
         return ImmutableList.of(id.asObject());
     }
 
-    protected String buildInsertTemplate(UltraSearchBackendEntry.Row entry) {
-        if (this.insertTemplate != null) {
-            return this.insertTemplate;
-        }
-
-        StringBuilder insert = new StringBuilder();
-        insert.append("REPLACE INTO ").append(this.table()).append(" (");
-
-        int i = 0;
-        int n = entry.columns().size();
-        for (HugeKeys key : entry.columns().keySet()) {
-            insert.append(formatKey(key));
-            if (++i != n) {
-                insert.append(", ");
-            }
-        }
-        insert.append(") VALUES (");
-        // Fill with '?'
-        for (i = 0; i < n; i++) {
-            insert.append("?");
-            if (i != n - 1) {
-                insert.append(", ");
-            }
-        }
-        insert.append(")");
-
-        this.insertTemplate = insert.toString();
-        return this.insertTemplate;
-    }
-
-    protected String buildDeleteTemplate(List<HugeKeys> idNames) {
-        if (this.deleteTemplate != null) {
-            return this.deleteTemplate;
-        }
-
-        StringBuilder delete = new StringBuilder();
-        delete.append("DELETE FROM ").append(this.table());
-        this.appendPartition(delete);
-
-        WhereBuilder where = new WhereBuilder();
-        where.and(formatKeys(idNames), "?");
-        delete.append(where.build());
-
-        this.deleteTemplate = delete.toString();
-        return this.deleteTemplate;
-    }
-
     /**
      * Insert an entire row
      */
     @Override
     public void insert(Session session, UltraSearchBackendEntry.Row entry) {
-        String docID = new String("id:" + session.database() + ":" + TABLE + "::" + type.name());
+        String docID = new String("id:" + session.database() + ":" + this.table() + "::" + entry.id().asString());
         JSONObject obj = new JSONObject();
-        obj.put("update", docID);
+        obj.put("put", docID);
 
         JSONObject fields = new JSONObject();
-        JSONObject id = new JSONObject();
-        id.put("increment", increment);
-        fields.put("id", id);
+        for(Map.Entry item : entry.columns().entrySet())
+        {
+            fields.put(item.getKey(), item.getValue());
+        }
 
         obj.put("fields", fields);
         session.add(docID, obj.toString());
-
-
-
-        String template = this.buildInsertTemplate(entry);
-
-        PreparedStatement insertStmt;
-        try {
-            // Create or get insert prepare statement
-            insertStmt = session.prepareStatement(template);
-            int i = 1;
-            for (Object object : entry.columns().values()) {
-                insertStmt.setObject(i++, object);
-            }
-        } catch (SQLException e) {
-            throw new BackendException("Failed to prepare statement '%s'" +
-                    "for entry: %s", template, entry);
-        }
-        session.add(insertStmt);
     }
 
     @Override
     public void delete(Session session, UltraSearchBackendEntry.Row entry) {
         if (entry.columns().isEmpty()) {
-            session.delete(this.table(), entry.id());
+            session.delete(session.getDocID(table(), entry.id().asString()));
         } else {
-            for (BackendColumn col : entry.columns()) {
-                session.remove(table(), CF, entry.id().asBytes(), col.name);
-            }
+            session.delete(session.getDocID(table(), entry.id().asString()));
         }
     }
 
@@ -197,13 +132,10 @@ public abstract class UltraSearchTable
         }
 
         List<StringBuilder> selections = this.query2Select(this.table(), query);
-        try {
-            for (StringBuilder selection : selections) {
-                ResultSet results = session.select(selection.toString());
-                rs.extend(this.results2Entries(query, results));
-            }
-        } catch (SQLException e) {
-            throw new BackendException("Failed to query [%s]", e, query);
+
+        for (StringBuilder selection : selections) {
+            JSONArray results = session.select(selection.toString());
+            rs.extend(this.results2Entries(query, results));
         }
 
         LOG.debug("Return {} for query {}", rs, query);
@@ -351,7 +283,7 @@ public abstract class UltraSearchTable
         sql.append(key);
         switch (relation.relation()) {
             case EQ:
-                sql.append(" = ").append(value);
+                sql.append(" contains ").append("\"" + value + "\"");
                 break;
             case NEQ:
                 sql.append(" != ").append(value);
@@ -461,7 +393,7 @@ public abstract class UltraSearchTable
     }
 
     protected Iterator<BackendEntry> results2Entries(Query query,
-                                                     ResultSet results) {
+                                                     JSONArray results) {
         return new UltraSearchEntryIterator(results, query, this::mergeEntries);
     }
 
