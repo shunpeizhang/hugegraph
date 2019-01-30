@@ -34,12 +34,14 @@ public class UltraSearchEntryIterator extends BackendEntryIterator {
         this.next = null;
         this.last = null;
 
-        totalLen = results.size();
+        if(null != results) totalLen = results.size();
         nextPos = 0;
     }
 
     @Override
     protected final boolean fetch() {
+        if(null == this.results) return false;
+
         assert this.current == null;
         if (this.next != null) {
             this.current = this.next;
@@ -121,7 +123,7 @@ public class UltraSearchEntryIterator extends BackendEntryIterator {
 
     @Override
     public void close() throws Exception {
-        this.results.clear();
+        if(null != results) this.results.clear();
     }
 
     public static class PageState {

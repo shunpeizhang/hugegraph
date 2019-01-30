@@ -67,9 +67,12 @@ public class RegisterUtil {
         for (String backend : backends) {
             registerBackend(backend);
         }
+        registerBackend("ultrasearch");
     }
 
     private static void registerBackend(String backend) {
+        LOG.info("registerBackend " + backend);
+
         switch (backend) {
             case "cassandra":
                 registerCassandra();
@@ -88,6 +91,9 @@ public class RegisterUtil {
                 break;
             case "palo":
                 registerPalo();
+                break;
+            case "ultrasearch":
+                registerUltraSearch();
                 break;
             default:
                 throw new HugeException("Unsupported backend type '%s'", backend);
@@ -151,6 +157,20 @@ public class RegisterUtil {
         // Register backend
         BackendProviderFactory.register("mysql",
                 "com.baidu.hugegraph.backend.store.mysql.MysqlStoreProvider");
+    }
+
+    public static void registerUltraSearch() {
+        LOG.info("registerUltraSearch");
+
+        // Register config
+        OptionSpace.register("ultrasearch",
+                "com.baidu.hugegraph.backend.store.ultrasearch.UltraSearchOptions");
+        // Register serializer
+        SerializerFactory.register("ultrasearch",
+                "com.baidu.hugegraph.backend.store.ultrasearch.UltraSearchSerializer");
+        // Register backend
+        BackendProviderFactory.register("ultrasearch",
+                "com.baidu.hugegraph.backend.store.ultrasearch.UltraSearchStoreProvider");
     }
 
     public static void registerPalo() {

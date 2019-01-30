@@ -20,6 +20,7 @@ import java.util.stream.IntStream;
 
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.impl.client.HttpClients;
 import org.slf4j.Logger;
 
 import com.baidu.hugegraph.backend.BackendException;
@@ -58,8 +59,8 @@ public class UltraSearchSessions extends BackendSessionPool {
     private boolean opened;
 
     public UltraSearchSessions(HugeConfig config, String database, String store) {
-        //super(database + "/" + store);
-        super(database);
+        super(database + "/" + store);
+        //super(database);
         this.config = config;
         this.database = database;
         this.opened = false;
@@ -106,9 +107,16 @@ public class UltraSearchSessions extends BackendSessionPool {
     }
 
     public void checkSessionConnected() {
+        LOG.info("checkSessionConnected here1");
+
         Session session = this.session();
         E.checkState(session != null, "MySQL session has not been initialized");
+
+        LOG.info("checkSessionConnected here2");
+
         E.checkState(!session.closed(), "MySQL session has been closed");
+
+        LOG.info("checkSessionConnected here3");
     }
 
     public static class Operation {
@@ -154,8 +162,11 @@ public class UltraSearchSessions extends BackendSessionPool {
                             .build())
                     .build();
 
-            this.feedClient = FeedClientFactory.create(sessionParams, new SimpleLoggerResultCallback(this.pending, 10));
+            this.feedClient = FeedClientFactory.create(sessionParams, new SimpleLoggerResultCallback(this.pending, 1));
+            this.opened = true;
         }
+
+
 
         @Override
         public void close() {
@@ -193,6 +204,12 @@ public class UltraSearchSessions extends BackendSessionPool {
         }
 
         public JSONArray select(String sql){
+            JSONObject sqlObj = new JSONObject();
+            sqlObj.put("sql", sql + ";");
+            sql = sqlObj.toString();
+
+            LOG.info("select : " + sql);
+
             String url = new String("http://" +
                     config.get(UltraSearchOptions.ULTRASEARCH_IP) + ":" +
                     config.get(UltraSearchOptions.ULTRASEARCH_PORT) + "/search/");
@@ -221,6 +238,11 @@ public class UltraSearchSessions extends BackendSessionPool {
                     return null;
                 }
 
+                if(!root.has("children")){
+                    LOG.info("not data");
+                    return null;
+                }
+
                 //得到结果
                 children = root.getJSONArray("children");
             }
@@ -229,27 +251,40 @@ public class UltraSearchSessions extends BackendSessionPool {
         }
 
         public JSONObject get(String tableName, String docID){
+            LOG.info("get tableName:  " + tableName + "  docID: " + docID);
+
             String url = new String("http://" +
                     config.get(UltraSearchOptions.ULTRASEARCH_IP) + ":" +
                     config.get(UltraSearchOptions.ULTRASEARCH_PORT) + "/document/v1/" +
-                    database + "/" + tableName + "/docid/" + docID);
+                    tableName + "/" + tableName + "/docid/" + docID);
 
-            HttpClient httpClient = new DefaultHttpClient();
+            LOG.info("get here10");
+
+            HttpClient httpClient = HttpClients.createDefault();
 
             // 设置超时时间
-            httpClient.getParams().setParameter(CoreConnectionPNames.CONNECTION_TIMEOUT, 2000);
-            httpClient.getParams().setParameter(CoreConnectionPNames.SO_TIMEOUT, 2000);
+            //httpClient.getParams().setParameter(CoreConnectionPNames.CONNECTION_TIMEOUT, 2000);
+            //httpClient.getParams().setParameter(CoreConnectionPNames.SO_TIMEOUT, 2000);
+
+            LOG.info("get here11");
 
             JSONObject fields = null;
             HttpGet get = new HttpGet(url);
-            get.setHeader("Content-type", "application/json");
+            //get.setHeader("Content-type", "application/json");
             try {
+                LOG.info("get here12");
+
                 HttpResponse response = httpClient.execute(get);
+
+                LOG.info("get here13");
+
                 int statusCode = response.getStatusLine().getStatusCode();
                 if(statusCode != HttpStatus.SC_OK){
-                    LOG.error("请求出错: "+statusCode);
+                    LOG.info("not error! get doc not found: "+statusCode + " url: " + url);
                     return null;
                 }
+
+                LOG.info("get here1");
 
                 StringBuilder resultJson = new StringBuilder();
                 InputStream in = response.getEntity().getContent();
@@ -260,30 +295,46 @@ public class UltraSearchSessions extends BackendSessionPool {
                     resultJson.append(new String(buf));
                 }
 
+                LOG.info("get here2");
+
                 JSONObject obj = JSONObject.fromObject(resultJson.toString());
                 fields = obj.getJSONObject("fields");
                 if(null == fields){
                     LOG.error("json error!");
                     return null;
                 }
+
+                LOG.info("get here3");
+
             } catch (IOException e) {
                 e.printStackTrace();
+
+                LOG.info("get here4");
                 return null;
             }
+            LOG.info("get here5");
 
             return fields;
         }
 
         public void add(Operation op) {
+            LOG.info("add documentId:  " + op.documentId + "  data: " + op.data);
+
             synchronized (this){
-                operations.add(op);
+                //operations.add(op);
+                pending.incrementAndGet();
+                feedClient.stream(op.documentId, op.data);
             }
         }
 
         public void add(String docID, String opJson) {
+            LOG.info("add1 documentId:  " + docID + "  data: " + opJson);
+
             Operation op = new Operation(docID, opJson);
             synchronized (this){
-                operations.add(op);
+                //operations.add(op);
+                pending.incrementAndGet();
+                feedClient.stream(op.documentId, op.data);
             }
         }
 
@@ -295,6 +346,8 @@ public class UltraSearchSessions extends BackendSessionPool {
             synchronized (this){
                 operations.add(op);
             }
+
+            LOG.info("add documentId:  " + op.documentId + "  data: " + op.data);
         }
 
         public void deleteWhere(String sql){
@@ -307,10 +360,12 @@ public class UltraSearchSessions extends BackendSessionPool {
                 String docID = item.getString("id");
                 delete(docID);
             }
+
+            LOG.info("deleteWhere sql:  " + sql);
         }
 
         public String getDocID(String table, String id){
-            return "id:" + database + ":" + table + "::" + id;
+            return "id:" + table + ":" + table + "::" + id;
         }
 
         public boolean httpPostWithJson(String body, String url, StringBuilder resultJson){
@@ -335,10 +390,10 @@ public class UltraSearchSessions extends BackendSessionPool {
                 // 检验返回码
                 int statusCode = response.getStatusLine().getStatusCode();
                 if(statusCode != HttpStatus.SC_OK){
-                    System.out.println("请求出错: "+statusCode);
+                    LOG.info("请求出错: "+statusCode + " body:" + body + " url:" + url);
                     isSuccess = false;
 
-                    System.out.println(response.getStatusLine().getReasonPhrase());
+                    LOG.info(response.getStatusLine().getReasonPhrase());
                 }else{
                     isSuccess = true;
 

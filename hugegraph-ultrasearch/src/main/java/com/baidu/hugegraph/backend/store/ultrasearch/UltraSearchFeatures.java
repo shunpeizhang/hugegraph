@@ -79,7 +79,7 @@ public class UltraSearchFeatures implements BackendFeatures {
     @Override
     public boolean supportsTransaction() {
         // MySQL support tx
-        return true;
+        return false;
     }
 
     @Override

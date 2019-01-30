@@ -124,6 +124,7 @@
         <module>hugegraph-mysql</module>
         <module>hugegraph-palo</module>
         <module>hugegraph-hbase</module>
+        <module>hugegraph-ultrasearch</module>
     </modules>
 
     <dependencyManagement>
@@ -254,6 +255,11 @@
                 <groupId>mysql</groupId>
                 <artifactId>mysql-connector-java</artifactId>
                 <version>${mysql.driver.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ultracloud.ultrasearch</groupId>
+                <artifactId>ultrasearch-http-client</artifactId>
+                <version>6-SNAPSHOT</version>
             </dependency>
 
             <!-- jersey -->

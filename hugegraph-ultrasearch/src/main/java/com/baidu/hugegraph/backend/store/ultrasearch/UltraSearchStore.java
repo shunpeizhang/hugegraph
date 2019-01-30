@@ -51,7 +51,7 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
         this.sessions = null;
         this.tables = new ConcurrentHashMap<>();
 
-        LOG.debug("Store loaded: {}", store);
+        LOG.info("Store loaded: {}", store);
     }
 
     protected void registerTableManager(HugeType type, UltraSearchTable table) {
@@ -59,6 +59,8 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
     }
 
     protected UltraSearchSessions openSessionPool(HugeConfig config) {
+        LOG.info("openSessionPool");
+
         return new UltraSearchSessions(config, this.database, this.store);
     }
 
@@ -79,19 +81,19 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
 
     @Override
     public synchronized void open(HugeConfig config) {
-        LOG.debug("Store open: {}", this.store);
+        LOG.info("Store open: {}", this.store);
 
         E.checkNotNull(config, "config");
 
         if (this.sessions != null && !this.sessions.closed()) {
-            LOG.debug("Store {} has been opened before", this.store);
+            LOG.info("Store {} has been opened before", this.store);
             this.sessions.useSession();
             return;
         }
 
         this.sessions = this.openSessionPool(config);
 
-        LOG.debug("Store connect with database: {}", this.database);
+        LOG.info("Store connect with database: {}", this.database);
         try {
             this.sessions.open(config);
         } catch (Exception e) {
@@ -114,12 +116,12 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
             throw new BackendException("Failed to open database", e);
         }
 
-        LOG.debug("Store opened: {}", this.store);
+        LOG.info("Store opened: {}", this.store);
     }
 
     @Override
     public void close() {
-        LOG.debug("Store close: {}", this.store);
+        LOG.info("Store close: {}", this.store);
         this.checkClusterConnected();
         this.sessions.close();
     }
@@ -133,14 +135,14 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
         this.checkSessionConnected();
         this.initTables();
 
-        LOG.debug("Store initialized: {}", this.store);
+        LOG.info("Store initialized: {}", this.store);
     }
 
     @Override
     public void clear() {
         // Check connected
         this.checkClusterConnected();
-        LOG.debug("Store cleared: {}", this.store);
+        LOG.info("Store cleared: {}", this.store);
     }
 
     @Override
@@ -148,13 +150,15 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
         this.checkSessionConnected();
 
         this.truncateTables();
-        LOG.debug("Store truncated: {}", this.store);
+        LOG.info("Store truncated: {}", this.store);
     }
 
     @Override
     public void mutate(BackendMutation mutation) {
+        LOG.info("mutate");
+
         if (LOG.isDebugEnabled()) {
-            LOG.debug("Store {} mutation: {}", this.store, mutation);
+            LOG.info("Store {} mutation: {}", this.store, mutation);
         }
 
         this.checkSessionConnected();
@@ -166,6 +170,8 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
     }
 
     private void mutate(Session session, BackendAction item) {
+        LOG.info("mutate");
+
         UltraSearchBackendEntry entry = castBackendEntry(item.entry());
         UltraSearchTable table = this.table(entry.type());
 
@@ -190,9 +196,16 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
 
     @Override
     public Iterator<BackendEntry> query(Query query) {
+        LOG.info("query");
+
         this.checkSessionConnected();
 
+        LOG.info("query here10");
+
         UltraSearchTable table = this.table(UltraSearchTable.tableType(query));
+
+        LOG.info("query here11");
+
         return table.query(this.sessions.session(), query);
     }
 
@@ -222,6 +235,8 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
     }
 
     protected void initTables() {
+        LOG.info("initTables");
+
         Session session = this.sessions.session();
         for (UltraSearchTable table : this.tables()) {
             table.init(session);
@@ -229,6 +244,8 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
     }
 
     protected void clearTables() {
+        LOG.info("clearTables");
+
         Session session = this.sessions.session();
         for (UltraSearchTable table : this.tables()) {
             table.clear(session);
@@ -236,6 +253,8 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
     }
 
     protected void truncateTables() {
+        LOG.info("truncateTables");
+
         Session session = this.sessions.session();
         for (UltraSearchTable table : this.tables()) {
             table.truncate(session);

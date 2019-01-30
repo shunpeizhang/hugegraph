@@ -146,7 +146,7 @@ public class WhereBuilder {
      * @param values the values to be concated with ',' and wappred by '()'
      */
     public void in(String key, List<Object> values) {
-        this.builder.append(key).append(" IN (");
+        this.builder.append(key).append(" equiv (");
         for (int i = 0, n = values.size(); i < n; i++) {
             Object value = values.get(i);
             if (value instanceof String) {

@@ -69,9 +69,8 @@ public class UltraSearchTables {
             String idCol = formatKey(HugeKeys.ID);
 
             JSONObject result = session.get(TABLE, type.name());
-            if(null == result)
-            {
-                throw new BackendException("Failed to get id from counters with type " + TABLE);
+            if(null == result){
+                return 0L;
             }
             return result.getInt("id");
         }
@@ -79,17 +78,30 @@ public class UltraSearchTables {
         public void increaseCounter(UltraSearchSessions.Session session,
                                     HugeType type, long increment) {
 
-            String docID = new String("id:" + session.database() + ":" + TABLE + "::" + type.name());
-            JSONObject obj = new JSONObject();
-            obj.put("update", docID);
+            if(0 == getCounter(session, type)){
+                String docID = session.getDocID(TABLE, type.name());
+                JSONObject obj = new JSONObject();
+                obj.put("put", docID);
 
-            JSONObject fields = new JSONObject();
-            JSONObject id = new JSONObject();
-            id.put("increment", increment);
-            fields.put("id", id);
+                JSONObject fields = new JSONObject();
+                fields.put("ID", 1);
+                fields.put("SCHEMA_TYPE", type.name());
 
-            obj.put("fields", fields);
-            session.add(docID, obj.toString());
+                obj.put("fields", fields);
+                session.add(docID, obj.toString());
+            }else{
+                String docID = session.getDocID(TABLE, type.name());
+                JSONObject obj = new JSONObject();
+                obj.put("update", docID);
+
+                JSONObject fields = new JSONObject();
+                JSONObject id = new JSONObject();
+                id.put("increment", increment);
+                fields.put("ID", id);
+
+                obj.put("fields", fields);
+                session.add(docID, obj.toString());
+            }
         }
     }
 

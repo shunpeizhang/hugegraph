@@ -60,16 +60,16 @@ public abstract class UltraSearchTable
     }
 
     protected void createTable(Session session, TableDefine tableDefine) {
-        LOG.debug("createTable table: {}", this.table());
+        LOG.info("createTable table: {}", this.table());
     }
 
     protected void dropTable(Session session) {
-        LOG.debug("Drop table: {}", this.table());
+        LOG.info("Drop table: {}", this.table());
 
     }
 
     protected void truncateTable(Session session) {
-        LOG.debug("Truncate table: {}", this.table());
+        LOG.info("Truncate table: {}", this.table());
     }
 
     protected List<HugeKeys> idColumnName() {
@@ -89,7 +89,7 @@ public abstract class UltraSearchTable
      */
     @Override
     public void insert(Session session, UltraSearchBackendEntry.Row entry) {
-        String docID = new String("id:" + session.database() + ":" + this.table() + "::" + entry.id().asString());
+        String docID = session.getDocID(this.table(), entry.id().asString());
         JSONObject obj = new JSONObject();
         obj.put("put", docID);
 
@@ -101,13 +101,19 @@ public abstract class UltraSearchTable
 
         obj.put("fields", fields);
         session.add(docID, obj.toString());
+
+        LOG.info("insert : " + obj.toString());
     }
 
     @Override
     public void delete(Session session, UltraSearchBackendEntry.Row entry) {
         if (entry.columns().isEmpty()) {
+            LOG.info("isEmpty delete : " + entry.id().asString());
+
             session.delete(session.getDocID(table(), entry.id().asString()));
         } else {
+            LOG.info("not isEmpty delete : " + entry.id().asString());
+
             session.delete(session.getDocID(table(), entry.id().asString()));
         }
     }
@@ -127,18 +133,24 @@ public abstract class UltraSearchTable
         ExtendableIterator<BackendEntry> rs = new ExtendableIterator<>();
 
         if (query.limit() == 0 && query.limit() != Query.NO_LIMIT) {
-            LOG.debug("Return empty result(limit=0) for query {}", query);
+            LOG.info("Return empty result(limit=0) for query {}", query);
             return rs;
         }
 
+        LOG.info("query here1");
+
         List<StringBuilder> selections = this.query2Select(this.table(), query);
 
+        LOG.info("query here2");
+
         for (StringBuilder selection : selections) {
+            LOG.info("query selection:" + selection.toString());
+
             JSONArray results = session.select(selection.toString());
             rs.extend(this.results2Entries(query, results));
         }
 
-        LOG.debug("Return {} for query {}", rs, query);
+        LOG.info("Return {} for query {}", rs, query);
         return rs;
     }
 
@@ -154,7 +166,7 @@ public abstract class UltraSearchTable
 
         if (query.conditions().isEmpty()) {
             // Query only by id
-            LOG.debug("Query only by id(s): {}", ids);
+            LOG.info("Query only by id(s): {}", ids);
             selections = ids;
         } else {
             selections = new ArrayList<>(ids.size());
@@ -162,7 +174,7 @@ public abstract class UltraSearchTable
                 // Query by condition
                 selections.addAll(this.queryCondition2Select(query, selection));
             }
-            LOG.debug("Query by conditions: {}", selections);
+            LOG.info("Query by conditions: {}", selections);
         }
         // Set page, order-by and limit
         for (StringBuilder selection : selections) {
@@ -283,7 +295,7 @@ public abstract class UltraSearchTable
         sql.append(key);
         switch (relation.relation()) {
             case EQ:
-                sql.append(" contains ").append("\"" + value + "\"");
+                sql.append(" contains ").append(value);
                 break;
             case NEQ:
                 sql.append(" != ").append(value);
@@ -301,7 +313,7 @@ public abstract class UltraSearchTable
                 sql.append(" <= ").append(value);
                 break;
             case IN:
-                sql.append(" IN (");
+                sql.append(" equiv (");
                 List<?> values = (List<?>) value;
                 for (int i = 0, n = values.size(); i < n; i++) {
                     sql.append(serializeValue(values.get(i)));
