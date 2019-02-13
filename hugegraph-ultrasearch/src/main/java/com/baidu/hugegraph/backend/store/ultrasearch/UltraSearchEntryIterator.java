@@ -113,8 +113,16 @@ public class UltraSearchEntryIterator extends BackendEntryIterator {
         while(iter.hasNext())
         {
             String name = (String)iter.next();
-            Object value = fields.getJSONObject(name);
-            entry.column(UltraSearchTable.parseKey(name), value);
+            if(name.equalsIgnoreCase("sddocname") ||
+                    name.equalsIgnoreCase("documentid")) continue;
+
+            Object value = fields.get(name);
+            if(HugeKeys.ENABLE_LABEL_INDEX.name().equalsIgnoreCase(name)){
+                Boolean bValue = 1 == (Integer)value ? true : false;
+                entry.column(UltraSearchTable.parseKey(name), bValue);
+            }else{
+                entry.column(UltraSearchTable.parseKey(name), value);
+            }
         }
         ++nextPos;
 

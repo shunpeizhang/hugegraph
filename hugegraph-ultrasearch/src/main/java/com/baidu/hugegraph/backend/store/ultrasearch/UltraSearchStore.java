@@ -1,13 +1,10 @@
 package com.baidu.hugegraph.backend.store.ultrasearch;
 
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.sf.json.JSONObject;
 import org.slf4j.Logger;
 
 import com.baidu.hugegraph.backend.BackendException;
@@ -119,6 +116,87 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
         LOG.info("Store opened: {}", this.store);
     }
 
+    //临时处理，initStore解决后去掉
+    void initStore(UltraSearchSessions.Session session){
+        JSONObject result = session.get("counters", "SYS_SCHEMA");
+        if(null != result){
+            return;
+        }
+
+        //property_keys
+        insertPropertyKeys(session, -15, "~backend_info", 8, "{\"version\":\"1.2\"}");
+        insertPropertyKeys(session, -12, "~task_dependencies", 5, "{}");
+        insertPropertyKeys(session, -11, "~task_result", 8, "{}");
+        insertPropertyKeys(session, -10, "~task_input", 8, "{}");
+        insertPropertyKeys(session, -9, "~task_retries", 4, "{}");
+        insertPropertyKeys(session, -8, "~task_update", 10, "{}");
+        insertPropertyKeys(session, -7, "~task_create", 10, "{}");
+        insertPropertyKeys(session, -6, "~task_progress", 4, "{}");
+        insertPropertyKeys(session, -5, "~task_status", 3, "{}");
+        insertPropertyKeys(session, -4, "~task_description", 8, "{}");
+        insertPropertyKeys(session, -3, "~task_callable", 8, "{}");
+        insertPropertyKeys(session, -2, "~task_name", 8, "{}");
+        insertPropertyKeys(session, -1, "~task_type", 8, "{}");
+
+        //vertex_labels
+        {
+            JSONObject obj = new JSONObject();
+
+            Map<String, Object> fieldsMap = new HashMap<>();
+            fieldsMap.put("ID", -13);
+            fieldsMap.put("NAME", "~task");
+            fieldsMap.put("ID_STRATEGY", 4);
+            fieldsMap.put("PRIMARY_KEYS", "[]");
+            fieldsMap.put("PROPERTIES", "[-1,-2,-3,-4,-5,-6,-7,-8,-9,-10,-11,-12]");
+            fieldsMap.put("NULLABLE_KEYS", "[-4,-8,-10,-11,-12]");
+            fieldsMap.put("INDEX_LABELS", "[-14]");
+            fieldsMap.put("ENABLE_LABEL_INDEX", 1);
+            fieldsMap.put("USER_DATA", "{}");
+            fieldsMap.put("STATUS", 1);
+            obj.put("fields", fieldsMap);
+
+            session.postDoc("vertex_labels", "" + -13, obj.toString());
+        }
+
+        //index_labels
+        {
+            JSONObject obj = new JSONObject();
+
+            Map<String, Object> fields = new HashMap<>();
+            fields.put("ID", -14);
+            fields.put("NAME", "~task-index-by-~task_status");
+            fields.put("BASE_TYPE", 1);
+            fields.put("BASE_VALUE", -13);
+            fields.put("INDEX_TYPE", 1);
+            fields.put("FIELDS", "[-5]");
+            fields.put("STATUS", 1);
+
+            obj.put("fields", fields);
+            session.postDoc("index_labels", "" + -14, obj.toString());
+        }
+
+        UltraSearchTables.Counters.putCounter(session, HugeType.SYS_SCHEMA, 16);
+
+        LOG.info("init store success!");
+        System.exit(0);
+    }
+
+    void insertPropertyKeys(UltraSearchSessions.Session session, int id, String name, int dataType, String userData){
+        JSONObject obj = new JSONObject();
+
+        Map<String, Object> fields = new HashMap<>();
+        fields.put("ID", id);
+        fields.put("NAME", name);
+        fields.put("DATA_TYPE", dataType);
+        fields.put("CARDINALITY", 1);
+        fields.put("PROPERTIES", "[]");
+        fields.put("USER_DATA", userData);
+        fields.put("STATUS", 1);
+
+        obj.put("fields", fields);
+        session.postDoc("property_keys", "" + id, obj.toString());
+    }
+
     @Override
     public void close() {
         LOG.info("Store close: {}", this.store);
@@ -134,6 +212,8 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
 
         this.checkSessionConnected();
         this.initTables();
+
+        initStore(this.sessions.session());
 
         LOG.info("Store initialized: {}", this.store);
     }
@@ -211,17 +291,17 @@ public abstract class UltraSearchStore extends AbstractBackendStore<Session> {
 
     @Override
     public void beginTx() {
-        throw new BackendException("beginTx not suport");
+        //throw new BackendException("beginTx not suport");
     }
 
     @Override
     public void commitTx() {
-        throw new BackendException("beginTx not Unsupported");
+        //throw new BackendException("beginTx not Unsupported");
     }
 
     @Override
     public void rollbackTx() {
-        throw new BackendException("beginTx not Unsupported");
+        //throw new BackendException("beginTx not Unsupported");
     }
 
     @Override

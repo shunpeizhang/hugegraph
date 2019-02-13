@@ -295,7 +295,11 @@ public abstract class UltraSearchTable
         sql.append(key);
         switch (relation.relation()) {
             case EQ:
-                sql.append(" contains ").append(value);
+                if (value instanceof String){
+                    sql.append(" contains ").append(value);
+                }else{
+                    sql.append(" = ").append(value);
+                }
                 break;
             case NEQ:
                 sql.append(" != ").append(value);
@@ -313,15 +317,30 @@ public abstract class UltraSearchTable
                 sql.append(" <= ").append(value);
                 break;
             case IN:
-                sql.append(" equiv (");
                 List<?> values = (List<?>) value;
-                for (int i = 0, n = values.size(); i < n; i++) {
-                    sql.append(serializeValue(values.get(i)));
-                    if (i != n - 1) {
-                        sql.append(", ");
+                if(1 == values.size()){
+                    sql.append(key).append(" ");
+                    Object v = values.get(0);
+                    if (v instanceof String) {
+                        sql.append(" contains " + UltraSearchUtil.escapeString((String) v));
+                    } else {
+                        sql.append(" = " + v);
                     }
+                }else if(1 < values.size()){
+                    sql.append(key).append(" contains equiv (");
+                    for (int i = 0, n = values.size(); i < n; i++) {
+                        Object v = values.get(i);
+                        if (v instanceof String) {
+                            sql.append(UltraSearchUtil.escapeString((String) v));
+                        } else {
+                            sql.append("'" + v + "'");
+                        }
+                        if (i != n - 1) {
+                            sql.append(", ");
+                        }
+                    }
+                    sql.append(")");
                 }
-                sql.append(")");
                 break;
             case CONTAINS:
             case CONTAINS_KEY:

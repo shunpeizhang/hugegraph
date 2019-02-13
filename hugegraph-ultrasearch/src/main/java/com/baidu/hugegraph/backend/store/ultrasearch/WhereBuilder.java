@@ -146,19 +146,29 @@ public class WhereBuilder {
      * @param values the values to be concated with ',' and wappred by '()'
      */
     public void in(String key, List<Object> values) {
-        this.builder.append(key).append(" equiv (");
-        for (int i = 0, n = values.size(); i < n; i++) {
-            Object value = values.get(i);
+        if(1 == values.size()){
+            this.builder.append(key).append(" ");
+            Object value = values.get(0);
             if (value instanceof String) {
-                this.builder.append(UltraSearchUtil.escapeString((String) value));
+                this.builder.append(" contains " + UltraSearchUtil.escapeString((String) value));
             } else {
-                this.builder.append(value);
+                this.builder.append(" = " + value);
             }
-            if (i != n - 1) {
-                this.builder.append(", ");
+        }else if(1 < values.size()){
+            this.builder.append(key).append(" contains equiv (");
+            for (int i = 0, n = values.size(); i < n; i++) {
+                Object value = values.get(i);
+                if (value instanceof String) {
+                    this.builder.append(UltraSearchUtil.escapeString((String) value));
+                } else {
+                    this.builder.append("'" + value + "'");
+                }
+                if (i != n - 1) {
+                    this.builder.append(", ");
+                }
             }
+            this.builder.append(")");
         }
-        this.builder.append(")");
     }
 
     /**

@@ -64,6 +64,8 @@ public class UltraSearchTables {
             this.define.keys(HugeKeys.SCHEMA_TYPE);
         }
 
+
+
         public long getCounter(UltraSearchSessions.Session session, HugeType type) {
             String schemaCol = formatKey(HugeKeys.SCHEMA_TYPE);
             String idCol = formatKey(HugeKeys.ID);
@@ -72,27 +74,51 @@ public class UltraSearchTables {
             if(null == result){
                 return 0L;
             }
-            return result.getInt("id");
+
+            System.out.println("getCounter ID:" + result.getInt("ID"));
+
+            return result.getInt("ID");
+        }
+
+        public static boolean putCounter(UltraSearchSessions.Session session, HugeType type, long num){
+            //String docID = session.getDocID(TABLE, type.name());
+            JSONObject obj = new JSONObject();
+            //obj.put("put", docID);
+
+            JSONObject fields = new JSONObject();
+            fields.put("ID", num);
+            fields.put("SCHEMA_TYPE", type.name());
+
+            obj.put("fields", fields);
+            //session.add(docID, obj.toString());
+            session.postDoc(TABLE, type.name(), obj.toString());
+
+            return true;
         }
 
         public void increaseCounter(UltraSearchSessions.Session session,
                                     HugeType type, long increment) {
+//                String docID = session.getDocID(TABLE, type.name());
+//                JSONObject obj = new JSONObject();
+//                obj.put("update", docID);
+//
+//                JSONObject fields = new JSONObject();
+//                JSONObject id = new JSONObject();
+//                id.put("increment", increment);
+//                fields.put("ID", id);
+//
+//                obj.put("fields", fields);
+//                session.add(docID, obj.toString());
 
-            if(0 == getCounter(session, type)){
-                String docID = session.getDocID(TABLE, type.name());
+
+            JSONObject result = session.get(TABLE, type.name());
+            if(null == result){
+                putCounter(session, type, increment);
+                return;
+            }
+
+
                 JSONObject obj = new JSONObject();
-                obj.put("put", docID);
-
-                JSONObject fields = new JSONObject();
-                fields.put("ID", 1);
-                fields.put("SCHEMA_TYPE", type.name());
-
-                obj.put("fields", fields);
-                session.add(docID, obj.toString());
-            }else{
-                String docID = session.getDocID(TABLE, type.name());
-                JSONObject obj = new JSONObject();
-                obj.put("update", docID);
 
                 JSONObject fields = new JSONObject();
                 JSONObject id = new JSONObject();
@@ -100,8 +126,9 @@ public class UltraSearchTables {
                 fields.put("ID", id);
 
                 obj.put("fields", fields);
-                session.add(docID, obj.toString());
-            }
+                session.putDoc(TABLE, type.name(), obj.toString());
+
+
         }
     }
 

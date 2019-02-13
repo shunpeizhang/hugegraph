@@ -18,6 +18,8 @@ import com.baidu.hugegraph.type.HugeType;
 import com.baidu.hugegraph.type.define.HugeKeys;
 import com.baidu.hugegraph.util.InsertionOrderUtil;
 import com.baidu.hugegraph.util.JsonUtil;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
 
 public class UltraSearchSerializer extends TableSerializer {
 
@@ -57,23 +59,30 @@ public class UltraSearchSerializer extends TableSerializer {
     @Override
     protected Id[] toIdArray(Object object) {
         assert object instanceof String;
-        String value = (String) object;
-        Number[] values = JsonUtil.fromJson(value, Number[].class);
-        Id[] ids = new Id[values.length];
-        int i = 0;
-        for (Number number : values) {
-            ids[i++] = IdGenerator.of(number.longValue());
+        //String value = (String) object;
+        //Number[] values = JsonUtil.fromJson(value, Number[].class);
+        JSONArray value = (JSONArray) object;
+
+        //if(0 == values.length) return null;
+
+        Id[] ids = new Id[value.size()];
+        for (int iPos = 0;  value.size() > iPos; ++iPos) {
+            ids[iPos] = IdGenerator.of(value.getLong(iPos));
         }
         return ids;
     }
 
     @Override
     protected Object toLongSet(Collection<Id> ids) {
+        //if(0 == ids.size()) return null;
+
         return this.toLongList(ids);
     }
 
     @Override
     protected Object toLongList(Collection<Id> ids) {
+        //if(0 == ids.size()) return null;
+
         long[] values = new long[ids.size()];
         int i = 0;
         for (Id id : ids) {
@@ -99,7 +108,9 @@ public class UltraSearchSerializer extends TableSerializer {
             Object val = prop.value();
             properties.put(key, val);
         }
-        row.column(HugeKeys.PROPERTIES, JsonUtil.toJson(properties));
+
+        //if(0 < properties.size())
+            row.column(HugeKeys.PROPERTIES, JsonUtil.toJson(properties));
     }
 
     @Override
@@ -128,7 +139,9 @@ public class UltraSearchSerializer extends TableSerializer {
     protected void writeUserdata(SchemaElement schema,
                                  TableBackendEntry entry) {
         assert entry instanceof UltraSearchBackendEntry;
-        entry.column(HugeKeys.USER_DATA, JsonUtil.toJson(schema.userdata()));
+
+        //if(0 < schema.userdata().size())
+            entry.column(HugeKeys.USER_DATA, JsonUtil.toJson(schema.userdata()));
     }
 
     @Override
@@ -136,9 +149,9 @@ public class UltraSearchSerializer extends TableSerializer {
                                 TableBackendEntry entry) {
         assert entry instanceof UltraSearchBackendEntry;
         // Parse all user data of a schema element
-        String json = entry.column(HugeKeys.USER_DATA);
+        JSONObject json = entry.column(HugeKeys.USER_DATA);
         @SuppressWarnings("unchecked")
-        Map<String, Object> userdata = JsonUtil.fromJson(json, Map.class);
+        Map<String, Object> userdata = JsonUtil.fromJson(json.toString(), Map.class);
         for (Map.Entry<String, Object> e : userdata.entrySet()) {
             schema.userdata(e.getKey(), e.getValue());
         }
