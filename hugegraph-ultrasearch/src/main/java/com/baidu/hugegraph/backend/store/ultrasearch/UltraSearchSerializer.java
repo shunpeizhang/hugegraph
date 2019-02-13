@@ -116,14 +116,14 @@ public class UltraSearchSerializer extends TableSerializer {
     @Override
     protected void parseProperties(HugeElement element,
                                    TableBackendEntry.Row row) {
-        String properties = row.column(HugeKeys.PROPERTIES);
+        JSONObject properties = row.column(HugeKeys.PROPERTIES);
         // Query edge will wraped by a vertex, whose properties is empty
         if (properties.isEmpty()) {
             return;
         }
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> props = JsonUtil.fromJson(properties, Map.class);
+        Map<String, Object> props = JsonUtil.fromJson(properties.toString(), Map.class);
         for (Map.Entry<String, Object> prop : props.entrySet()) {
             /*
              * The key is string instead of int, because the key in json

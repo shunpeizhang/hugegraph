@@ -3,11 +3,7 @@ package com.baidu.hugegraph.backend.store.ultrasearch;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
@@ -93,10 +89,19 @@ public abstract class UltraSearchTable
         JSONObject obj = new JSONObject();
         obj.put("put", docID);
 
-        JSONObject fields = new JSONObject();
+        Map<String, Object> fields = new HashMap<>();
         for(Map.Entry item : entry.columns().entrySet())
         {
-            fields.put(item.getKey(), item.getValue());
+            if(HugeKeys.ENABLE_LABEL_INDEX.name().equalsIgnoreCase(((HugeKeys)item.getKey()).name())){
+                if((Boolean) item.getValue()){
+                    fields.put(((HugeKeys)item.getKey()).name(), 1);
+                }else{
+                    fields.put(((HugeKeys)item.getKey()).name(), 0);
+                }
+            }else{
+                fields.put(((HugeKeys)item.getKey()).name(), item.getValue());
+            }
+
         }
 
         obj.put("fields", fields);
@@ -105,16 +110,57 @@ public abstract class UltraSearchTable
         LOG.info("insert : " + obj.toString());
     }
 
+    protected String buildDeleteTemplate(List<HugeKeys> idNames, List<Object> values) {
+        if (this.deleteTemplate != null) {
+            return this.deleteTemplate;
+        }
+
+        StringBuilder delete = new StringBuilder();
+        delete.append("select * FROM ").append(this.table());
+        this.appendPartition(delete);
+
+        WhereBuilder where = new WhereBuilder();
+        where.and(formatKeys(idNames), values);
+        delete.append(where.build());
+
+        this.deleteTemplate = delete.toString();
+        return this.deleteTemplate;
+    }
+
     @Override
     public void delete(Session session, UltraSearchBackendEntry.Row entry) {
+        List<HugeKeys> idNames = this.idColumnName();
+        List<Object> values = new ArrayList<>();
+        List<HugeKeys> realIDNames = new ArrayList<>();
+
         if (entry.columns().isEmpty()) {
-            LOG.info("isEmpty delete : " + entry.id().asString());
+            // Delete just by id
+            List<Long> idValues = this.idColumnValue(entry);
+            assert idNames.size() == idValues.size();
 
-            session.delete(session.getDocID(table(), entry.id().asString()));
+            for (int i = 0, n = idNames.size(); i < n; i++) {
+                if(null == idValues.get(i)) continue;
+
+                values.add(idValues.get(i));
+                realIDNames.add(idNames.get(i));
+            }
+
+            String sql = this.buildDeleteTemplate(realIDNames, values);
+            session.deleteWhere(sql);
         } else {
-            LOG.info("not isEmpty delete : " + entry.id().asString());
+            for (int i = 0, n = idNames.size(); i < n; i++) {
 
-            session.delete(session.getDocID(table(), entry.id().asString()));
+                HugeKeys key = idNames.get(i);
+                Object value = entry.column(key);
+
+                if(null == value) continue;
+
+                values.add(value);
+                realIDNames.add(idNames.get(i));
+            }
+
+            String sql = this.buildDeleteTemplate(realIDNames, values);
+            session.deleteWhere(sql);
         }
     }
 
@@ -399,7 +445,6 @@ public abstract class UltraSearchTable
         // Fetch `limit + 1` records for judging whether reached the last page
         select.append(" limit ");
         select.append(query.limit() + 1);
-        select.append(";");
     }
 
     protected void wrapOffset(StringBuilder select, Query query) {
@@ -410,7 +455,6 @@ public abstract class UltraSearchTable
         select.append(query.limit());
         select.append(" offset ");
         select.append(query.offset());
-        select.append(";");
     }
 
     private static Object serializeValue(Object value) {
