@@ -211,6 +211,40 @@ public abstract class UltraSearchTable
         this.delete(session, entry);
     }
 
+    //因为us不支持不带where的查询，所以需要对这种情况进行处理
+    private String checkAndHandleSelect(String sql){
+        if(sql.contains("WHERE")){
+            return sql;
+        }
+
+        if(table().equalsIgnoreCase("vertex_labels") ||
+                table().equalsIgnoreCase("index_labels") ||
+                table().equalsIgnoreCase("edge_labels") ||
+                table().equalsIgnoreCase("property_keys") ||
+                table().equalsIgnoreCase("counters")
+        ){
+            return sql + " where ID > -10000";
+        }else if(table().equalsIgnoreCase("system_vertices") ||
+                table().equalsIgnoreCase("system_edges_out") ||
+                table().equalsIgnoreCase("system_edges_in") ||
+                table().equalsIgnoreCase("graph_vertices") ||
+                table().equalsIgnoreCase("graph_edges_out") ||
+                table().equalsIgnoreCase("graph_edges_in")
+        ){
+            return sql + " where LABEL > -10000";
+        }else if(table().equalsIgnoreCase("graph_range_indexes") ||
+                table().equalsIgnoreCase("graph_search_indexes") ||
+                table().equalsIgnoreCase("graph_secondary_indexes") ||
+                table().equalsIgnoreCase("system_range_indexes") ||
+                table().equalsIgnoreCase("system_search_indexes") ||
+                table().equalsIgnoreCase("system_secondary_indexes")
+        ){
+            return sql + " where INDEX_LABEL_ID > -10000";
+        }
+
+        return sql;
+    }
+
     @Override
     public Iterator<BackendEntry> query(Session session, Query query) {
         ExtendableIterator<BackendEntry> rs = new ExtendableIterator<>();
@@ -229,7 +263,7 @@ public abstract class UltraSearchTable
         for (StringBuilder selection : selections) {
             LOG.info("query selection:" + selection.toString());
 
-            JSONArray results = session.select(selection.toString());
+            JSONArray results = session.select(checkAndHandleSelect(selection.toString()));
             rs.extend(this.results2Entries(query, results));
         }
 

@@ -111,11 +111,13 @@ public class WhereBuilder {
 
         for (int i = 0, n = keys.size(); i < n; i++) {
             this.builder.append(keys.get(i));
-            this.builder.append(operators.get(i));
+
             Object value = values.get(i);
             if (value instanceof String) {
+                this.builder.append(" contains ");
                 this.builder.append(UltraSearchUtil.escapeString((String) value));
             } else {
+                this.builder.append(operators.get(i));
                 this.builder.append(value);
             }
             if (i != n - 1) {
