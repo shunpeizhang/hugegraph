@@ -80,12 +80,49 @@ public abstract class UltraSearchTable
         return ImmutableList.of(id.asObject());
     }
 
+
+    private void printEntryRow(UltraSearchBackendEntry.Row entry){
+        LOG.info("printEntryRow begin =======================");
+        LOG.info("printEntryRow => HugeType: " + entry.type().name() +
+                " id: " + entry.id());
+
+        Map<HugeKeys, Object> columns = entry.columns();
+        for(HugeKeys key : columns.keySet()){
+            LOG.info("printEntryRow => key: " + key.name() + " value: " + columns.get(key).toString());
+        }
+        LOG.info("printEntryRow end =======================");
+    }
+
     /**
      * Insert an entire row
      */
     @Override
     public void insert(Session session, UltraSearchBackendEntry.Row entry) {
-        String docID = session.getDocID(this.table(), entry.id().asString());
+        //printEntryRow(entry);
+
+        String docID = new String();
+        {
+            if(1 == this.idColumnName().size()){
+                LOG.info("insert doc table: " + this.table());
+                docID = session.getDocID(this.table(), entry.id().asString());
+            }else{
+                List<HugeKeys> idNames = this.idColumnName();
+                String valuesID = new String();
+
+                for (int i = 0, n = idNames.size(); i < n; i++) {
+                    HugeKeys key = idNames.get(i);
+                    Object value = entry.column(key);
+
+                    if(null == value) continue;
+
+                    valuesID = valuesID + ":" + value;
+                }
+
+                docID = session.getDocID(this.table(), valuesID);
+                LOG.info("insert valuesID: " + valuesID);
+            }
+        }
+
         JSONObject obj = new JSONObject();
         obj.put("put", docID);
 
