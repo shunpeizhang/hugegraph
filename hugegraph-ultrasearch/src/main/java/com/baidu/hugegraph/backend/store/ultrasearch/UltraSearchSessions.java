@@ -164,7 +164,7 @@ public class UltraSearchSessions extends BackendSessionPool {
                     .setConnectionParams(new ConnectionParams.Builder().setDryRun(false).build())
                     .setFeedParams(new FeedParams.Builder()
                             .setDataFormat(FeedParams.DataFormat.JSON_UTF8)
-                            .build()).setClientQueueSize(1).setThrottlerMinSize(1)
+                            .build())
                     .build();
 
             this.feedClient = FeedClientFactory.create(sessionParams, new SimpleLoggerResultCallback(this.pending, 1));
@@ -220,7 +220,7 @@ public class UltraSearchSessions extends BackendSessionPool {
                     config.get(UltraSearchOptions.ULTRASEARCH_PORT) + "/search/");
 
             StringBuilder resultJson = new StringBuilder();
-            boolean ret = httpPostWithJson(sql, url, resultJson);
+            boolean ret = HttpConnectionPoolUtil.httpPostWithJson(sql, url, resultJson);
             if(!ret || 0 == resultJson.toString().length()){
                 LOG.error("select failed! resultJson: " + resultJson);
                 return null;
@@ -267,52 +267,17 @@ public class UltraSearchSessions extends BackendSessionPool {
                     config.get(UltraSearchOptions.ULTRASEARCH_PORT) + "/document/v1/" +
                     tableName + "/" + tableName + "/docid/" + docID);
 
-
-            HttpClient httpClient = HttpClients.createDefault();
-
-            // 设置超时时间
-            //httpClient.getParams().setParameter(CoreConnectionPNames.CONNECTION_TIMEOUT, 2000);
-            //httpClient.getParams().setParameter(CoreConnectionPNames.SO_TIMEOUT, 2000);
-
-
             JSONObject fields = null;
-            HttpGet get = new HttpGet(url);
-            //get.setHeader("Content-type", "application/json");
-            try {
+            StringBuilder resultJson = new StringBuilder();
+            if(!HttpConnectionPoolUtil.httpGet(url, resultJson)){
+                LOG.error("HttpConnectionPoolUtil.httpGet failed! " + url);
+                return null;
+            }
 
-                HttpResponse response = httpClient.execute(get);
-
-
-                int statusCode = response.getStatusLine().getStatusCode();
-                if(statusCode != HttpStatus.SC_OK){
-                    LOG.info("not error! get doc not found: "+statusCode + " url: " + url);
-                    return null;
-                }
-
-
-                StringBuilder resultJson = new StringBuilder();
-                InputStream in = response.getEntity().getContent();
-                while(0 < in.available()){
-                    byte[] buf = new byte[1024];
-                    in.read(buf);
-
-                    resultJson.append(new String(buf));
-                }
-
-                LOG.info("get here2  " + resultJson.toString());
-
-                JSONObject obj = JSONObject.fromObject(resultJson.toString());
-                fields = obj.getJSONObject("fields");
-                if(null == fields){
-                    LOG.error("json error!");
-                    return null;
-                }
-
-
-            } catch (IOException e) {
-                e.printStackTrace();
-
-                LOG.info("get here4");
+            JSONObject obj = JSONObject.fromObject(resultJson.toString());
+            fields = obj.getJSONObject("fields");
+            if(null == fields){
+                LOG.error("json error! " + resultJson.toString());
                 return null;
             }
 
@@ -348,7 +313,7 @@ public class UltraSearchSessions extends BackendSessionPool {
                     config.get(UltraSearchOptions.ULTRASEARCH_PORT) + "/document/v1/" + tableName + "/" + tableName + "/docid/" + id);
 
             StringBuilder resultJson = new StringBuilder();
-            boolean ret = httpPostWithJson(fieldJson, url, resultJson);
+            boolean ret = HttpConnectionPoolUtil.httpPostWithJson(fieldJson, url, resultJson);
             if(!ret){
                 LOG.error("postDoc failed! " + fieldJson);
                 return;
@@ -362,30 +327,8 @@ public class UltraSearchSessions extends BackendSessionPool {
                     config.get(UltraSearchOptions.ULTRASEARCH_IP) + ":" +
                     config.get(UltraSearchOptions.ULTRASEARCH_PORT) + "/document/v1/" + tableName + "/" + tableName + "/docid/" + id);
 
-            HttpClient httpClient = new DefaultHttpClient();
-
-            // 设置超时时间
-            httpClient.getParams().setParameter(CoreConnectionPNames.CONNECTION_TIMEOUT, 2000);
-            httpClient.getParams().setParameter(CoreConnectionPNames.SO_TIMEOUT, 2000);
-
-            HttpPut put = new HttpPut(url);
-            put.setHeader("Content-type", "application/json");
-
-            StringEntity entity = new StringEntity(fieldJson, Charset.forName("UTF-8"));
-            put.setEntity(entity);
-
-            HttpResponse response = null;
-            try {
-                response = httpClient.execute(put);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            // 检验返回码
-            int statusCode = response.getStatusLine().getStatusCode();
-            if(statusCode != HttpStatus.SC_OK){
-                LOG.info("请求出错: "+statusCode + " body:" + fieldJson + " url:" + url);
-                LOG.info(response.getStatusLine().getReasonPhrase());
+            if(!HttpConnectionPoolUtil.httpPut(url, fieldJson)){
+                LOG.error("HttpConnectionPoolUtil.httpPut failed! " + url + " " + fieldJson);
                 return false;
             }
 
